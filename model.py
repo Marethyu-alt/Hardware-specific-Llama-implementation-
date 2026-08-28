@@ -26,6 +26,13 @@ class Transformer(nn.Module):
     def __init__(self,config): #takes as arg config: LlamaConfig will be passed into config later 
         super().__init__()
         assert config.vocab_size != -1, 'Vocab Size must be set'
+        self.tok_embeddings = nn.Embedding(config.vocab_size, config.n_embd)
+        self.layers = nn.ModuleList()
+        for _ in range(self.config.n_layers):
+            self.layers.append(EncoderBlock(config)) #pass into Block to be created later for layering transformer
+        self.norm = RMSNorm(config.n_embd, eps = config.norm_eps)
+        self.output = nn.Linear(config.n_embd, config.vocab_size, bias = False)
+        self.freqs_complex = precompute_theta_pos_frequencies(self.config.n_embd // self.config.n_heads, self.config.max_seq_len * 2, device = self.config.device)
 
 
 if __name__ == '__main__': 
