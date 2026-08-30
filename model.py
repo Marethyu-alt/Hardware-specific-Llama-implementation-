@@ -45,6 +45,21 @@ def apply_rotary_embeddings(x,freqs_complex, device):
     x_out = torch.view_as_real(x_rotated) #returning back to real numbers to be computed via gpu with ease
     x_out = x_out.reshape(*x.shape)
     return x_out.type_as(x).to(device)
+
+#Understanding RMS Norm:
+#In layer norm we took standard gaussian, i.e. a normal distribution with a mean of 0 and var of 1 of the features (n_embd)
+#In RMS Norm we only make the n_embd have a var of 1 (not gaussian!), formula: x_norm = x / sqrt (1/n * summation of xi^2 + epsilon) to get var (avg distance from mean) = 1
+#rmsnorm class
+class RMSNorm(nn.Module):
+    def __init__(self, n_embd, eps:float = 1e-6):
+        super().__init__()
+        self.eps = eps
+        self.weight = nn.Parameter(torch.ones(n_embd))
+    def _norm(self,x): #where x is (B,T,C (n_embd)), formula: x_norm = x / sqrt (1/n * summation of xi^2 + epsilon)
+        return x * torch.rsqrt(x.pow(2).mean(-1,keepdim=True) + self.eps)
+
+        
+
 #main transformer
 class Transformer(nn.Module): 
     def __init__(self,config): #takes as arg config: LlamaConfig will be passed into config later 
