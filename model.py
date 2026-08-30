@@ -42,9 +42,9 @@ def apply_rotary_embeddings(x,freqs_complex, device):
     x_complex = torch.view_as_complex(x.float().reshape(*x.shape[:-1],-1,2)) #(B, seq_len, H, head_dim) -> (B,seq_len,, head_dim/2 (real_dim, imag_dim)) by dividing by 2 then converting to imaginary, token features (x)
     freqs_complex = freqs_complex.unsqueeze(0).unsqueeze(2) #adding 2 extra dims for B, H (1, Seq_len, 1, head_dim/2)
     x_rotated = x_complex * freqs_complex #multiplies actual tokens by their corresponding frequencies
-    x_out = torch.view_as_real(x_rotated) #returning back to real numbers to be computed via gpu with ease
+    x_out = torch.view_as_real(x_rotated) #returning back to real numbers to be computed via gpu with ease  
     x_out = x_out.reshape(*x.shape)
-    return x_out.type_as(x).to(device)
+    return x_out.type_as(x).to(device) #(B,T,C)
 
 #Understanding RMS Norm:
 #In layer norm we took standard gaussian, i.e. a normal distribution with a mean of 0 and var of 1 of the features (n_embd)
@@ -60,6 +60,28 @@ class RMSNorm(nn.Module):
     def forward(self, x,):
         # (n_embd) * (B,seq_len, n_embd) = (B,seq_len,n_embd), Reminder: last 2 dims are matrix and higher dim matrices are multiplied and broadcasted via BATCHING
         return self.weight * self._norm(x.float()).type_as(x)
+class EncoderBlock(nn.Module):
+    def __init__(self,config):
+        super().__init__()
+        self.n_heads = config.n_heads
+        self.n_embd = config.n_embd
+        self.head_dim = config.n_embd / config.n_heads 
+
+        self.attention = SelfAttention(config) #passing config into self attention in the encoder block
+        self.feed_forward = FeedForward(config) #same thing but for ff
+        self.attention_norm = RMSNorm(config.n_embd, eps = config.norm_eps) #RMSNorm BEFORE self attention block
+        self.ffn_norm = RMSNorm(config.n_embd, eps = config.norm_eps) #RMSNorm BEFORE ffn block
+    def forward(self,x,start_pos, freqs_complex):
+        #(B,T,C)
+        h = x + self.attention.forward(self.attention_norm(x), start_pos, freqs_complex) #residual connections -> (B,T,C) + (B,T,C) = (B,T,C), from star_pos to end position via frequency
+        out = h + self.feed_forward.forward(self.ffn_norm(x))
+        return out
+
+
+
+
+
+
 
 
 
