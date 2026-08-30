@@ -57,6 +57,11 @@ class RMSNorm(nn.Module):
         self.weight = nn.Parameter(torch.ones(n_embd))
     def _norm(self,x): #where x is (B,T,C (n_embd)), formula: x_norm = x / sqrt (1/n * summation of xi^2 + epsilon)
         return x * torch.rsqrt(x.pow(2).mean(-1,keepdim=True) + self.eps)
+    def forward(self, x,):
+        # (n_embd) * (B,seq_len, n_embd) = (B,seq_len,n_embd), Reminder: last 2 dims are matrix and higher dim matrices are multiplied and broadcasted via BATCHING
+        return self.weight * self._norm(x.float()).type_as(x)
+
+
 
         
 
