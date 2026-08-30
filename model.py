@@ -42,7 +42,7 @@ class Transformer(nn.Module):
         for layer in self.layers:
             h = layer(h, start_pos, freqs_complex) #consecutively apply the encoder to all layers
         h = self.norm(h)
-        output = self.output(h).float() #RMS Norm
+        output = self.output(h).float() #RMS Norm (32,2048,4096) * (4096,30,000) = (32,2048,30,000) or (B,T,C)
         return output #transformer skeleton complete 
     
 #Understanding ROPE: 
@@ -50,8 +50,20 @@ class Transformer(nn.Module):
 #Relative Positional Encodings (NOT USED IN LLAMA) = xiWQ(xjWk + aKij)T / sqrt dz  = xiWQ* xjWk.T/sqrt dz (content to content similarity) + xiWq*aKij.T / sqrt dz (content to relative position term)
 #Fundamental Question: can we find an inner product or similarity over vectors of q and k such that the attention mechanism depends only on the two vectors and their distance?
 #Rotary Position Embeddings = Vector Q * Vector K * cos ((semantic angle Q - semantic angle K) + (position Q - position K)*theta) this results in a number that represents both meaning(semantic positions which is found through backprop and multi-head attention) and distance (position)
+#Simplified Formula using complex numbers for computational efficiency: Attention Score = (q*k)*[e^i(m-n)theta] (Euler's number)
 
+    def precompute_theta_pos_frequencies(head_dim, seq_len, device, theta: float = 10_000.0):
+        assert head_dim % 2 == 0, 'Head dims must be even for ROPE'
+        theta_numerator = torch.arange(0,head_dim,2).float() #formula theta = 10k ^  (-2(i-1) / head_dim) for i = 1,2,3..head_dim/2 = 1/10,000 ^ 2((i-1)/head_dim)
+        theta = 1 / (theta ** (theta_numerator/ head_dim)).to(device) #(head_dim / 2) = shape
+        m = torch.arange(seq_len, device = device)
+        freqs = torch.outer(m, theta).float() #(headdim/2,seq_len), each individual element of m times all values of theta 
+        freqs_complex = torch.polar(torch.ones_like(freqs), freqs)
+        return freqs_complex
+    def apply_rotary_embeddings(x,freqs_complex, device):
+        x_complex = torch.view_as_complex(x.float().reshape(*x.shape[:-1],-1,2))
 
+    
 
 
 
