@@ -32,7 +32,7 @@ class LlamaConfig:
 #ROPE implementation
 def precompute_theta_pos_frequencies(head_dim, seq_len, device, theta: float = 10_000.0):
     assert head_dim % 2 == 0, 'Head dims must be even for ROPE'
-    theta_numerator = torch.arange(0,head_dim,2).float() #formula theta = 10k ^  (-2(i-1) / head_dim) for i = 1,2,3..head_dim/2 = 1/10,000 ^ 2((i-1)/head_dim), setting up different speeds of theta
+    theta_numerator = torch.arange(0,head_dim,2).float() #formula theta = 10k ^  (-2(i-1) / head_dim) for i = 1, 2,3..head_dim/2 = 1/10,000 ^ 2((i-1)/head_dim), setting up different speeds of theta
     theta = 1 / (theta ** (theta_numerator/ head_dim)).to(device) #(head_dim / 2) = shape
     m = torch.arange(seq_len, device = device)
     freqs = torch.outer(m, theta).float() #(seq_len, headdim/2), each individual element of m times all values of theta, all positions of tokens and their corresponding angles/frequencies
@@ -76,6 +76,34 @@ class EncoderBlock(nn.Module):
         h = x + self.attention.forward(self.attention_norm(x), start_pos, freqs_complex) #residual connections -> (B,T,C) + (B,T,C) = (B,T,C), from star_pos to end position via frequency
         out = h + self.feed_forward.forward(self.ffn_norm(x))
         return out
+
+
+#In a transformer we are only interested in the last token outputed by the model because we have the previous ones
+#the model needs access to all the previous tokens to decide which token to output because that's the context
+#We don't want to do computation on tokens its already seen during inference
+#Hence Self-Attention with KV Cache:
+
+class SelfAttention(nn.Module):
+    def __init__(self,config):
+        super().__init__()
+        self.n_kv_heads = config.n_heads if config.n_kv_heads is None else config.n_kv_heads
+        self.n_heads_q = config.n_heads
+        self.n_rep = self.n_heads_q // self.n_kv_heads
+        self.head_dim = config.n_embd  // config.n_heads
+        self.wq = nn.Linear(config.n_embd, config.n_heads * self.head_dim, bias = False) #n_embd split by heads for queries
+        self.wk = nn.Linear(config.n_embd, self.n_kv_heads * self.head_dim, bias = False) #keys split into keys heads for grouped multi head attention (not as many as queries)
+        self.wv = nn.Linear(config.n_embd, self.n_kv_heads * self.head_dim, bias = False) #keys split into values heads for grouped multi head attention (not as many as queries tho)
+        self.wo = nn.Linear(config.n_heads * self.head_dim, config.n_embd, bias=False) #output, converts back into n_embd 
+        self.cache_k = torch.zeros((config.max_batch_size, config.max_seq_len, self.n_kv_heads, self.head_dim))
+        self.cache_v = torch.zeros((config.max_batch_size, config.max_seq_len, self.n_kv_heads, self.head_dim))
+    def forward(self,x, start_pos, freqs_complex, ):
+        batch_size, seq_len, _ = x.shape #(B, seq_len, n_embd)
+        xq = self.wq(x) #(B, seq_len, q_heads, self.head_dim)
+        
+
+
+
+
 
 
 
