@@ -78,10 +78,22 @@ class EncoderBlock(nn.Module):
         return out
 
 
+def repeat_kv(x, n_rep):
+    batch_size, seq_len, n_kv_heads, head_dim = x.shape
+    if n_rep == 1:
+        return x
+    else:
+        return(
+            #(B, Seq_Len, N_Kv_heads, Head_dim)
+            x[:,:,:,None:]
+            .expand(batch_size, seq_len, n_kv_heads, head_dim)
+            .reshape(batch_size, seq_len,n_kv_heads * n_rep, head_dim)
+        ) #reduce to smaller n_kv_heads 
+
 #In a transformer we are only interested in the last token outputed by the model because we have the previous ones
 #the model needs access to all the previous tokens to decide which token to output because that's the context
 #We don't want to do computation on tokens its already seen during inference
-#Hence Self-Attention with KV Cache:
+#Hence Self-Attention with KV Cache (Only for inferencing): 
 
 class SelfAttention(nn.Module):
     def __init__(self,config):
@@ -97,9 +109,39 @@ class SelfAttention(nn.Module):
         self.cache_k = torch.zeros((config.max_batch_size, config.max_seq_len, self.n_kv_heads, self.head_dim))
         self.cache_v = torch.zeros((config.max_batch_size, config.max_seq_len, self.n_kv_heads, self.head_dim))
     def forward(self,x, start_pos, freqs_complex, ):
-        batch_size, seq_len, _ = x.shape #(B, seq_len, n_embd)
-        xq = self.wq(x) #(B, seq_len, q_heads, self.head_dim)
-        
+        batch_size, seq_len, _ = x.shape #(B, seq_len, n_embd) where seq_len will be passed in as one 
+        xq = self.wq(x) #(B, seq_len, q_heads, head_dim)
+        xk = self.wk(x) #(B, seq_len, k_heads, head_dim)
+        xv = self.wv(x) #(B, seq_len, v_heads, head_dim)
+        xq = xq.view(batch_size, seq_len, self.n_heads_q, self.head_dim) #(B, 1, H_Q * head_dim) ---> (B,1,H_Q, head_dim)
+        xk = xk.view(batch_size, seq_len, self.n_kv_heads, self.head_dim) #(B, 1, H_K * head_dim) ---> (B,1,H_K, head_dim)
+        xv = xv.view(batch_size, seq_len, self.n_kv_heads, self.head_dim) #(B, 1, H_K * head_dim) ---> (B,1,H_V, head_dim)
+        x_q = apply_rotary_embeddings(xq, freqs_complex, device = x.device) #(B, 1, n_heads, head_dim)
+        x_k = apply_rotary_embeddings(xk, freqs_complex, device = x.device) #(B, 1, n_heads, i)
+        self.cache_k[:batch_size, start_pos: start_pos+ seq_len] = xk  #mvoves current token up by one and saves it in cache
+        self.cache_v[:batch_size, start_pos: start_pos+ seq_len] = xv
+        keys  = self.cache_k[:batch_size, 0: start_pos + seq_len]
+        values = self.cache_v[:batch_size, 0: start_pos + seq_len] #retrieve all cached keys so far, (B, seq_len_kv, H_K, head_dim)
+        keys = repeat_kv(keys, self.n_rep) #repeats the ratio of n_head_q to n_head_k because LLAMA DIDNT IMPLEMENT GQA IN SMALLER MODELS (;-;)
+        values = repeat_kv(values, self.n_rep) #repeats the ratio of n_head_q to n_head_k because LLAMA DIDNT IMPLEMENT GQA IN SMALLER MODELS (;-;)
+        xq = xq.transpose(1,2) #transposing heads and seq_len (B,H_Q, 1,Head_dim)
+        xk = xk.transpose(1,2) #transposing heads and seq_len (B,H_K, 1,Head_dim)
+        xv = xv.transpose(1,2) #transposing heads and seq_len (B,H_V, 1,Head_dim)
+        scores = torch.matmul(xq, keys.transpose(2,3)) / math.sqrt(self.head_dim) #standard matmul for intermediate attention score and downscaling (B,H_Q, 1, Seq_length_kv)
+        scores = F.softmax(scores.float(), dim = -1).type_as(xq)
+        out = torch.matmul(scores, values) #B,H_Q, 1,head_dim
+        output = (output.transpose(1,2).contiguous().view(batch_size,seq_len, -1)) #(B,1,H_Q,head_dim), (B,1,n_embd)
+        return self.wo(output) #(B,1,n_embd)
+    
+
+
+
+
+
+
+
+
+
 
 
 
