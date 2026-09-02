@@ -135,25 +135,29 @@ class SelfAttention(nn.Module):
     
 
 
+#Gated feed-forward SWIGLU Activation Function 
+#SwiGLU(x) = Swish(xW) *element-wise xV
+#Llama implementation of swiGLU: SILU(xWgate) *element-wise xWup * W down
 
+class FeedForward(nn.Module):
+    def __init__(self,config):
+        super().__init__()
+        hidden_dim = 4 * config.n_embd
+        hidden_dim = int(2*hidden_dim/3)
+        if config.ffn_dim_multiplier is not None:
+            hidden_dim = int(config.ffn_dim_multiplier * hidden_dim)
+        hidden = config.multiple_of * ((hidden + config.multiple_of - 1) // config.multiple_of) #round hidden dim to nearest multiple of multiple_of (i.e. 10,000 + 255 // 256 * 256 = 40)
+        self.w_gate = nn.Linear(config.n_embd, hidden_dim, bias = False)
+        self.w_down = nn.Linear(hidden_dim, config.n_embd, bias = False)
+        self.w_up = nn.Linear(config.n_embd, hidden_dim, bias = False )
+    def forward(self, x):
+        swish = F.silu(self.w_gate(x))
+        x_V = self.w_up(x)
+        x = swish * x_V
+        x = self.w_down(x)
+        return x
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+        
 
         
 
