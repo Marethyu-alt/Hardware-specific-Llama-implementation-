@@ -146,7 +146,7 @@ class FeedForward(nn.Module):
         hidden_dim = int(2*hidden_dim/3)
         if config.ffn_dim_multiplier is not None:
             hidden_dim = int(config.ffn_dim_multiplier * hidden_dim)
-        hidden = config.multiple_of * ((hidden + config.multiple_of - 1) // config.multiple_of) #round hidden dim to nearest multiple of multiple_of (i.e. 10,000 + 255 // 256 * 256 = 40)
+        hidden = config.multiple_of * ((hidden_dim + config.multiple_of - 1) // config.multiple_of) #round hidden dim to nearest multiple of multiple_of (i.e. 10,000 + 255 // 256 * 256 = 40)
         self.w_gate = nn.Linear(config.n_embd, hidden_dim, bias = False)
         self.w_down = nn.Linear(hidden_dim, config.n_embd, bias = False)
         self.w_up = nn.Linear(config.n_embd, hidden_dim, bias = False )
